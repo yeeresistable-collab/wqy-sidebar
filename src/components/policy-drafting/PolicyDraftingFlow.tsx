@@ -21,11 +21,14 @@ const flowSteps = [
 interface PolicyDraftingFlowProps {
   onBack: () => void;
   initialTitle?: string;
+  /** 从助手流式起草直接传入的完整政策内容，有值时跳过所有步骤直接进入编辑器 */
+  directContent?: string;
 }
 
 export function PolicyDraftingFlow({
   onBack,
   initialTitle,
+  directContent,
 }: PolicyDraftingFlowProps) {
   const [currentStep, setCurrentStep] = useState(1);
   /** 已完成（訪問過）的最大步驟，用於控制步驟條可點擊範圍 */
@@ -74,6 +77,22 @@ export function PolicyDraftingFlow({
     setQuickDraftResult(result);
     setQuickDraftReady(true);
   };
+
+  // 从助手直接传入内容：跳过所有步骤，直接进入编辑器
+  if (directContent) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0">
+        <PolicyOutputPage
+          policyTitle={initialTitle || "政策文件"}
+          coreElements={coreElements}
+          selectedPolicies={[]}
+          outline={[]}
+          onBack={onBack}
+          directContent={directContent}
+        />
+      </div>
+    );
+  }
 
   // 快速起草进度页
   if (quickMode && !quickDraftReady) {

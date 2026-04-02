@@ -4,14 +4,19 @@ import { PolicyDraftingFlow } from "@/components/policy-drafting/PolicyDraftingF
 export default function PolicyDraftingPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as { initialTitle?: string } | undefined;
+  const state = location.state as {
+    initialTitle?: string;
+    directContent?: string;
+    policyTitle?: string;
+  } | undefined;
 
   return (
     <div className="h-full overflow-hidden p-6 md:p-8">
       <div className="h-full min-h-0">
         <PolicyDraftingFlow
           onBack={() => navigate("/policy-writing")}
-          initialTitle={state?.initialTitle}
+          initialTitle={state?.policyTitle ?? state?.initialTitle}
+          directContent={state?.directContent}
         />
       </div>
     </div>

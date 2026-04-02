@@ -16,6 +16,8 @@ interface PolicyOutputPageProps {
   onBack: () => void;
   /** 快速起草模式：跳过 loading 骨架，直接打字机输出全文 */
   typewriterMode?: boolean;
+  /** 从助手直接传入的完整政策内容，跳过生成直接进入编辑状态 */
+  directContent?: string;
 }
 
 const editorTools = [
@@ -1354,6 +1356,7 @@ export function PolicyOutputPage({
   outline: outlineProp = [],
   onBack,
   typewriterMode = false,
+  directContent,
 }: PolicyOutputPageProps) {
   const navigate = useNavigate();
   const [displayedText, setDisplayedText] = useState("");
@@ -1470,7 +1473,20 @@ export function PolicyOutputPage({
       s.id === sId ? { ...s, subSections: [...s.subSections, { id: `${sId}-${Date.now()}`, title: "新节标题", keyPoints: ["新要点"], referencePolicies: [] }] } : s
     ));
 
+  // directContent：从助手直接传入，跳过生成
   useEffect(() => {
+    if (directContent) {
+      fullContentRef.current = directContent;
+      setDisplayedText(directContent);
+      setIsComplete(true);
+      setIsLoading(false);
+    }
+  // 仅在 directContent 首次挂载时执行
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (directContent) return;
     setIsLoading(true);
     setError(null);
     generateContent({ policyTitle, coreElements, selectedPolicies, outline: outlineProp })

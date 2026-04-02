@@ -23,15 +23,65 @@ export type AssistantMessage = {
   content: string;
   /** 消息附带的可点击跳转操作 */
   actions?: AssistantMessageAction[];
+  /**
+   * 流式起草消息：当前已输出的政策全文片段
+   * 非空时 content 作为标题/前言，streamContent 作为正文流式渲染
+   */
+  streamContent?: string;
+  /** 流式输出完成标志 */
+  streamDone?: boolean;
+  /** 流式起草对应的政策标题（用于跳转） */
+  streamPolicyTitle?: string;
+  /** 待输出的完整内容（仅前端运行时使用，不持久化） */
+  streamFullContent?: string;
 };
 
 export type AssistantPlan = {
   reply: string;
   action?:
     | { kind: "navigate"; path: string; search?: Record<string, string>; state?: Record<string, unknown> }
-    | { kind: "none" };
+    | { kind: "none" }
+    | { kind: "stream_draft"; policyTitle: string; fullContent: string };
   source: "model" | "fallback";
 };
+
+/** 根据政策标题生成一份模拟的政策全文（用于助手内流式输出） */
+export function generateMockPolicyContent(title: string): string {
+  const keyword = title.replace(/^关于|若干政策措施$|政策$|产业政策$/g, "").trim() || "数据产业";
+  return `关于促进${keyword}高质量发展的若干政策措施
+
+第一章 总则
+
+第一条【目的依据】为深入贯彻党中央、国务院关于推动${keyword}高质量发展的决策部署，加快构建现代产业体系，根据相关法律法规，结合本市实际，制定本政策措施。
+
+第二条【适用范围】本政策措施适用于在本市依法注册登记，从事${keyword}相关业务的企业、科研机构及其他组织。
+
+第三条【基本原则】坚持政府引导、市场主导；坚持创新驱动、开放合作；坚持系统推进、重点突破；坚持安全发展、合规经营。
+
+第二章 支持政策
+
+第四条【研发投入支持】对${keyword}领域企业年度研发投入超过上年度50%以上的，按超出部分的20%给予补贴，最高不超过200万元。
+
+第五条【企业认定奖励】对首次认定为国家级高新技术企业的${keyword}相关企业，给予一次性奖励20万元；连续认定的，每次给予10万元奖励。
+
+第六条【知识产权激励】对获得国家发明专利授权的企业，每项给予5万元奖励；对主导制定国际标准的企业给予100万元奖励，每家企业每年最高不超过50万元。
+
+第七条【人才引进支持】对引进${keyword}领域高层次人才的企业，按照人才认定等级给予相应安家补贴和科研经费支持，具体标准另行制定。
+
+第三章 服务保障
+
+第八条【一网通办】${keyword}相关业务许可、认定、备案等事项全面纳入政务服务平台，实现"一网通办"，办理时限压缩至1个工作日。
+
+第九条【部门协同】市主管部门负责统筹协调，发展改革、财政、市场监管等部门按照职责分工共同推进本政策措施落实。
+
+第十条【绩效评估】建立政策实施绩效评估机制，每年开展一次综合评估，评估结果作为政策调整优化的重要依据。
+
+第四章 附则
+
+第十一条【解释权】本政策措施由市主管部门负责解释。
+
+第十二条【施行日期】本政策措施自发布之日起施行，有效期三年。`;
+}
 
 export const fallbackCoreElements =
   "1. 政策适用范围与对象\n2. 扶持标准与补贴金额\n3. 申报条件与流程\n4. 资金来源与保障措施\n5. 监督管理与绩效评估";
@@ -188,16 +238,13 @@ function buildFallbackPlan(scene: AssistantScene, rawText: string): AssistantPla
 
   if (intentModule === "writing_draft") {
     const title = trimIntentPrefix(text, [/^(起草|撰写|草拟|制定|写一份|写)/, /政策文件$/, /文件$/]) || text;
+    const fullContent = generateMockPolicyContent(title);
     return {
-      reply: `已根据“${title}”创建起草任务，并自动带入政策标题和核心要素。`,
+      reply: `正在为您起草「${title}」，请稍候…`,
       action: {
-        kind: "navigate",
-        path: "/policy-writing/drafting",
-        state: {
-          initialTitle: title,
-          initialCoreElements: fallbackCoreElements,
-          autoGenerateCoreElements: true,
-        },
+        kind: "stream_draft",
+        policyTitle: title,
+        fullContent,
       },
       source: "fallback",
     };

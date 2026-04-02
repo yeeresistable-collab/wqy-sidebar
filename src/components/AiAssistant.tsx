@@ -12,6 +12,7 @@ import {
   Plus,
   Loader2,
   ExternalLink,
+  PenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -364,14 +365,88 @@ export function AiAssistant() {
     setHistoryOpen(false);
   };
 
+  /** 当前正在流式输出的消息 index（-1 表示无） */
+  const streamingIndexRef = useRef<number>(-1);
+  /** 打字机定时器 */
+  const typewriterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const executePlan = (plan: Awaited<ReturnType<typeof getAssistantPlan>>) => {
-    if (!plan.action || plan.action.kind === "none") return;
+    if (!plan.action || plan.action.kind === "none" || plan.action.kind === "stream_draft") return;
 
     const search = plan.action.search ? `?${new URLSearchParams(plan.action.search).toString()}` : "";
     navigate(`${plan.action.path}${search}`, {
       state: plan.action.state,
     });
   };
+
+  /**
+   * 启动打字机流式输出：
+   * convId         当前会话 id
+   * msgIndex       流式消息在 messages 数组中的 index
+   * fullContent    待输出的完整文本
+   * policyTitle    政策标题（用于编辑跳转）
+   */
+  const startTypewriter = useCallback(
+    (convId: string, msgIndex: number, fullContent: string, policyTitle: string) => {
+      if (typewriterTimerRef.current) clearInterval(typewriterTimerRef.current);
+      streamingIndexRef.current = msgIndex;
+
+      let charIndex = 0;
+      // 每次输出若干字符，模拟流速
+      const CHUNK = 4;
+      const INTERVAL = 30;
+
+      typewriterTimerRef.current = setInterval(() => {
+        charIndex = Math.min(charIndex + CHUNK, fullContent.length);
+        const partial = fullContent.slice(0, charIndex);
+
+        setConversations((prev) =>
+          prev.map((conv) => {
+            if (conv.id !== convId) return conv;
+            const msgs = conv.messages.map((msg, idx) => {
+              if (idx !== msgIndex) return msg;
+              return {
+                ...msg,
+                streamContent: partial,
+                streamDone: charIndex >= fullContent.length,
+              };
+            });
+            return { ...conv, messages: msgs, updatedAt: Date.now() };
+          }),
+        );
+
+        if (charIndex >= fullContent.length) {
+          if (typewriterTimerRef.current) clearInterval(typewriterTimerRef.current);
+          streamingIndexRef.current = -1;
+          // 输出完成后把完整内容写进去（已在上面赋值），顺便更新 policyTitle
+          setConversations((prev) =>
+            prev.map((conv) => {
+              if (conv.id !== convId) return conv;
+              const msgs = conv.messages.map((msg, idx) => {
+                if (idx !== msgIndex) return msg;
+                return {
+                  ...msg,
+                  streamContent: fullContent,
+                  streamDone: true,
+                  streamPolicyTitle: policyTitle,
+                  streamFullContent: undefined,
+                };
+              });
+              return { ...conv, messages: msgs, updatedAt: Date.now() };
+            }),
+          );
+        }
+      }, INTERVAL);
+    },
+    [setConversations],
+  );
+
+  // 卸载时清除定时器
+  useEffect(() => {
+    return () => {
+      if (typewriterTimerRef.current) clearInterval(typewriterTimerRef.current);
+    };
+  }, []);
 
   const handleSend = async (preset?: string) => {
     const content = (preset ?? input).trim();
@@ -385,6 +460,30 @@ export function AiAssistant() {
 
     try {
       const plan = await getAssistantPlan(scene, content, nextMessages);
+
+      if (plan.action?.kind === "stream_draft") {
+        const { policyTitle, fullContent } = plan.action;
+        // 先插入一条「正在起草」提示消息 + 空的流式占位
+        const introMsg: AssistantMessage = { role: "assistant", content: plan.reply };
+        const streamMsg: AssistantMessage = {
+          role: "assistant",
+          content: "",
+          streamContent: "",
+          streamDone: false,
+          streamPolicyTitle: policyTitle,
+          streamFullContent: fullContent,
+        };
+        const withStream = [...nextMessages, introMsg, streamMsg];
+        updateConversation(currentConversation.id, withStream);
+        setIsThinking(false);
+
+        // 下一帧启动打字机
+        const streamIdx = withStream.length - 1;
+        const convId = currentConversation.id;
+        setTimeout(() => startTypewriter(convId, streamIdx, fullContent, policyTitle), 50);
+        return;
+      }
+
       executePlan(plan);
       const assistantMessage: AssistantMessage = { role: "assistant", content: plan.reply };
       updateConversation(currentConversation.id, [...nextMessages, assistantMessage]);
@@ -564,35 +663,85 @@ export function AiAssistant() {
                 <img src={avatarImg} alt="" className="mr-2 mt-0.5 h-8 w-8 shrink-0 rounded-full" />
               )}
               <div className="max-w-[78%] flex flex-col gap-1.5">
-                <div
-                  className={cn(
-                    "rounded-lg px-3 py-2 text-sm leading-6",
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground",
-                  )}
-                >
-                  {message.content}
-                </div>
-                {/* 操作按钮（仅助手消息） */}
-                {message.role === "assistant" && message.actions && message.actions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pl-0.5">
-                    {message.actions.map((action) => (
-                      <button
-                        key={action.label}
-                        className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/8 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/15 transition-colors"
-                        onClick={() => {
-                          const search = action.search
-                            ? `?${new URLSearchParams(action.search).toString()}`
-                            : "";
-                          navigate(`${action.path}${search}`, { state: action.state });
-                        }}
-                      >
-                        <ExternalLink className="h-2.5 w-2.5" />
-                        {action.label}
-                      </button>
-                    ))}
+                {/* 流式起草消息 */}
+                {message.role === "assistant" && message.streamContent !== undefined ? (
+                  <div className="rounded-lg bg-muted text-foreground overflow-hidden">
+                    {/* 标题栏 */}
+                    <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1.5 border-b border-border/60">
+                      <PenLine className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="text-xs font-semibold text-primary truncate">
+                        {message.streamPolicyTitle ?? "政策起草中"}
+                      </span>
+                      {!message.streamDone && (
+                        <span className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          生成中
+                        </span>
+                      )}
+                      {message.streamDone && (
+                        <span className="ml-auto text-[10px] text-green-600 font-medium">✓ 生成完成</span>
+                      )}
+                    </div>
+                    {/* 政策正文（打字机） */}
+                    <pre className="px-3 py-2.5 text-[11px] leading-5 whitespace-pre-wrap font-sans max-h-56 overflow-y-auto text-foreground/90">
+                      {message.streamContent}
+                      {!message.streamDone && (
+                        <span className="inline-block w-[2px] h-[12px] bg-primary animate-pulse align-text-bottom ml-0.5" />
+                      )}
+                    </pre>
+                    {/* 完成后显示编辑按钮 */}
+                    {message.streamDone && (
+                      <div className="px-3 pb-3 pt-1">
+                        <button
+                          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
+                          onClick={() => {
+                            navigate("/policy-writing/drafting", {
+                              state: {
+                                directContent: message.streamContent,
+                                policyTitle: message.streamPolicyTitle,
+                              },
+                            });
+                          }}
+                        >
+                          <PenLine className="h-3 w-3" />
+                          编辑此政策
+                        </button>
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  <>
+                    <div
+                      className={cn(
+                        "rounded-lg px-3 py-2 text-sm leading-6",
+                        message.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-foreground",
+                      )}
+                    >
+                      {message.content}
+                    </div>
+                    {/* 操作按钮（仅助手消息） */}
+                    {message.role === "assistant" && message.actions && message.actions.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pl-0.5">
+                        {message.actions.map((action) => (
+                          <button
+                            key={action.label}
+                            className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/8 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/15 transition-colors"
+                            onClick={() => {
+                              const search = action.search
+                                ? `?${new URLSearchParams(action.search).toString()}`
+                                : "";
+                              navigate(`${action.path}${search}`, { state: action.state });
+                            }}
+                          >
+                            <ExternalLink className="h-2.5 w-2.5" />
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
