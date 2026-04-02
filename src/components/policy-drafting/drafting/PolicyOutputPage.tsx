@@ -1611,7 +1611,7 @@ export function PolicyOutputPage({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col -mx-6 -my-6 md:-mx-8 md:-my-8 px-6 py-0 md:px-8" style={{ height: "100vh" }}>
       {/* 快速起草模式：打字机输出进度提示条 */}
       {typewriterMode && !isComplete && !isLoading && (
         <motion.div

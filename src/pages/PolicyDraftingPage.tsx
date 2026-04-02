@@ -11,14 +11,12 @@ export default function PolicyDraftingPage() {
   } | undefined;
 
   return (
-    <div className="h-full overflow-hidden p-6 md:p-8">
-      <div className="h-full min-h-0">
-        <PolicyDraftingFlow
-          onBack={() => navigate("/policy-writing")}
-          initialTitle={state?.policyTitle ?? state?.initialTitle}
-          directContent={state?.directContent}
-        />
-      </div>
+    <div className="min-h-full p-6 md:p-8">
+      <PolicyDraftingFlow
+        onBack={() => navigate("/policy-writing")}
+        initialTitle={state?.policyTitle ?? state?.initialTitle}
+        directContent={state?.directContent}
+      />
     </div>
   );
 }
