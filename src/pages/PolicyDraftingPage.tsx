@@ -4,13 +4,7 @@ import { PolicyDraftingFlow } from "@/components/policy-drafting/PolicyDraftingF
 export default function PolicyDraftingPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as
-    | {
-        initialTitle?: string;
-        initialCoreElements?: string;
-        autoGenerateCoreElements?: boolean;
-      }
-    | undefined;
+  const state = location.state as { initialTitle?: string } | undefined;
 
   return (
     <div className="h-full overflow-hidden p-6 md:p-8">
@@ -18,8 +12,6 @@ export default function PolicyDraftingPage() {
         <PolicyDraftingFlow
           onBack={() => navigate("/policy-writing")}
           initialTitle={state?.initialTitle}
-          initialCoreElements={state?.initialCoreElements}
-          autoGenerateInitialCoreElements={state?.autoGenerateCoreElements}
         />
       </div>
     </div>

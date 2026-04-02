@@ -11,9 +11,18 @@ export type AssistantScene = {
   suggestions: { title: string; desc: string }[];
 };
 
+export type AssistantMessageAction = {
+  label: string;
+  path: string;
+  search?: Record<string, string>;
+  state?: Record<string, unknown>;
+};
+
 export type AssistantMessage = {
   role: "user" | "assistant";
   content: string;
+  /** 消息附带的可点击跳转操作 */
+  actions?: AssistantMessageAction[];
 };
 
 export type AssistantPlan = {

@@ -185,54 +185,173 @@ export function AssessmentStep7({ policy, clauses, step3, step4, step5, step6 }:
   );
 }
 
-/** 生成報告文字 */
-function generateReportText({ policy, clauses, step3, step4, step5, step6 }: Props): string {
+/** 生成政策前评估报告正文 */
+export function generateReportText({ policy, clauses, step3, step4, step5, step6 }: Props): string {
   const now = new Date().toLocaleDateString("zh-CN");
-  const lines: string[] = [
-    "═══════════════════════════════════════════════════════",
-    "              政策前评估报告意见书",
-    "═══════════════════════════════════════════════════════",
-    "",
+  const totalClauses = clauses.length;
+  const fundTotal = step4?.fundClauses.reduce((s, f) => s + f.estBudget, 0) ?? 0;
+  const fundCompanies = step4?.fundClauses.reduce((s, f) => s + f.estCompanies, 0) ?? 0;
+  const complianceIssues = step5?.filter(r => r.level !== "pass") ?? [];
+  const crossConflicts = step3?.crossClauses.filter(c => c.crossType === "conflict") ?? [];
+  const crossDuplicates = step3?.crossClauses.filter(c => c.crossType === "duplicate") ?? [];
+
+  const catLabel = (cat: string) =>
+    cat === "condition" ? "条件达成类" : cat === "competition" ? "竞争促进类" : "营商环境类";
+
+  const consistLabel = (l: string) =>
+    l === "consistent" ? "一致" : l === "partial" ? "部分一致" : "冲突";
+
+  const levelLabel = (l: string) =>
+    l === "pass" ? "通过" : l === "warning" ? "需关注" : "不合规";
+
+  const prioLabel = (p: string) =>
+    p === "high" ? "高优先级" : p === "medium" ? "中优先级" : "低优先级";
+
+  const lines: string[] = [];
+
+  const push = (...args: string[]) => lines.push(...args);
+
+  push(
+    `政策前评估报告意见书`,
+    ``,
     `评估对象：${policy.title}`,
     `评估日期：${now}`,
     `文件来源：${policy.source === "upload" ? "本地上传" : "政策起草库"}`,
-    "",
-    "───────────────────────────────────────────────────────",
-    "一、条款拆解与分类",
-    "───────────────────────────────────────────────────────",
-    ...clauses.map(c => `  ${c.article}【${c.category === "condition" ? "条件达成类" : c.category === "competition" ? "竞争促进类" : "营商环境类"}】${c.text}`),
-    "",
-    "───────────────────────────────────────────────────────",
-    "二、上位政策一致性评估",
-    "───────────────────────────────────────────────────────",
-    ...(step3?.superiorChecks.map(c => `  【${c.consistencyLevel === "consistent" ? "一致" : c.consistencyLevel === "partial" ? "部分一致" : "冲突"}】${c.policyTitle}\n  ${c.note}`) ?? []),
-    "",
-    "───────────────────────────────────────────────────────",
-    "三、交叉条款检索",
-    "───────────────────────────────────────────────────────",
-    ...(step3?.crossClauses.map(c => `  【${c.crossType === "conflict" ? "冲突" : c.crossType === "duplicate" ? "重复" : "互补"}】${c.ourArticle} vs ${c.crossPolicy}\n  建议：${c.suggestion}`) ?? []),
-    "",
-    "───────────────────────────────────────────────────────",
-    "四、落地性评估",
-    "───────────────────────────────────────────────────────",
-    "  资金类条款测算：",
-    ...(step4?.fundClauses.map(f => `  ${f.article} ${f.clauseText}\n  预计覆盖${f.estCompanies}家企业，年度资金需求${f.estBudget}万元`) ?? []),
-    "  非资金类条款：",
-    ...(step4?.nonFundClauses.map(n => `  ${n.article}【${n.audienceClarity === "clear" ? "受众明确" : n.audienceClarity === "vague" ? "受众模糊" : "受众缺失"}】${n.audienceNote}`) ?? []),
-    "",
-    "───────────────────────────────────────────────────────",
-    "五、合规性评估",
-    "───────────────────────────────────────────────────────",
-    ...(step5?.map(c => `  【${c.level === "pass" ? "合规" : c.level === "warning" ? "需关注" : "不合规"}】${c.dimension}\n  ${c.detail}${c.suggestion ? "\n  建议：" + c.suggestion : ""}`) ?? []),
-    "",
-    "───────────────────────────────────────────────────────",
-    "六、其他评估意见",
-    "───────────────────────────────────────────────────────",
-    ...(step6?.map(o => `  【${o.priority === "high" ? "高优先级" : o.priority === "medium" ? "中优先级" : "低优先级"}】${o.category}\n  ${o.opinion}\n  ${o.detail}`) ?? []),
-    "",
-    "═══════════════════════════════════════════════════════",
-    "                    （报告完）",
-    "═══════════════════════════════════════════════════════",
-  ];
+    ``,
+  );
+
+  // ── 综合结论 ──
+  const hasIssue = complianceIssues.length > 0 || crossConflicts.length > 0;
+  push(
+    `综合评估结论`,
+    ``,
+    hasIssue
+      ? `本政策整体方向合理，与上位法律法规总体一致，但在合规性和条款衔接方面存在${complianceIssues.length + crossConflicts.length}处需重点关注的问题，建议在出台前予以修改完善。`
+      : `本政策整体方向合理，条款结构清晰，与上位法律法规保持一致，合规性评估通过，具备出台条件。`,
+    ``,
+  );
+
+  // ── 一、条款拆解 ──
+  push(`一、条款拆解与分类`);
+  push(``);
+  if (totalClauses > 0) {
+    push(`本政策共涉及 ${totalClauses} 条核心条款，按类型分类如下：`);
+    push(``);
+    const grouped: Record<string, typeof clauses> = {};
+    for (const c of clauses) {
+      grouped[c.category] = grouped[c.category] ?? [];
+      grouped[c.category].push(c);
+    }
+    for (const [cat, items] of Object.entries(grouped)) {
+      push(`【${catLabel(cat)}】（共 ${items.length} 条）`);
+      for (const c of items) {
+        push(`  ${c.article}　${c.text}`);
+      }
+      push(``);
+    }
+  } else {
+    push(`条款拆解进行中，请稍候…`);
+    push(``);
+  }
+
+  // ── 二、上位政策一致性 ──
+  push(`二、上位政策一致性评估`);
+  push(``);
+  if (step3) {
+    push(`共检索 ${step3.superiorChecks.length} 部上位法律法规，评估结果如下：`);
+    push(``);
+    for (const s of step3.superiorChecks) {
+      push(`  ● ${s.policyTitle}（${s.source}）`);
+      push(`    一致性：${consistLabel(s.consistencyLevel)}`);
+      push(`    说明：${s.note}`);
+      push(``);
+    }
+    if (step3.crossClauses.length > 0) {
+      push(`交叉条款检索：发现 ${step3.crossClauses.length} 处交叉，其中冲突 ${crossConflicts.length} 处、重复 ${crossDuplicates.length} 处。`);
+      push(``);
+      for (const c of step3.crossClauses) {
+        const typeLabel = c.crossType === "conflict" ? "冲突" : c.crossType === "duplicate" ? "重复" : "互补";
+        push(`  ● [${typeLabel}] ${c.ourArticle} "${c.ourClause}"`);
+        push(`    与 ${c.crossPolicy} 中"${c.crossClause}"存在${typeLabel}。`);
+        push(`    处理建议：${c.suggestion}`);
+        push(``);
+      }
+    } else {
+      push(`交叉条款检索：未发现与现行政策存在冲突或重复的条款。`);
+      push(``);
+    }
+  } else {
+    push(`一致性评估进行中，请稍候…`);
+    push(``);
+  }
+
+  // ── 三、落地性评估 ──
+  push(`三、落地性评估`);
+  push(``);
+  if (step4) {
+    if (step4.fundClauses.length > 0) {
+      push(`（一）资金类条款测算`);
+      push(``);
+      push(`本政策共涉及 ${step4.fundClauses.length} 条资金扶持条款，预计年度财政需求合计 ${fundTotal} 万元，覆盖企业约 ${fundCompanies} 家。`);
+      push(``);
+      for (const f of step4.fundClauses) {
+        push(`  ● ${f.article}　${f.clauseText}`);
+        push(`    预计覆盖 ${f.estCompanies} 家企业，年度资金规模约 ${f.estBudget} 万元（覆盖率 ${f.coverageRate}）。`);
+        if (f.agentNote) push(`    测算说明：${f.agentNote}`);
+        push(``);
+      }
+    }
+    if (step4.nonFundClauses.length > 0) {
+      push(`（二）非资金类条款`);
+      push(``);
+      for (const n of step4.nonFundClauses) {
+        const clarity = n.audienceClarity === "clear" ? "受众明确" : n.audienceClarity === "vague" ? "受众描述模糊" : "受众界定缺失";
+        push(`  ● ${n.article}　${n.clauseText}`);
+        push(`    受众清晰度：${clarity}。${n.audienceNote}`);
+        push(``);
+      }
+    }
+  } else {
+    push(`落地性评估进行中，请稍候…`);
+    push(``);
+  }
+
+  // ── 四、合规性评估 ──
+  push(`四、合规性评估`);
+  push(``);
+  if (step5) {
+    const passed = step5.filter(r => r.level === "pass").length;
+    push(`共核查 ${step5.length} 个合规维度，通过 ${passed} 项，需关注 ${step5.length - passed} 项。`);
+    push(``);
+    for (const c of step5) {
+      push(`  ● ${c.dimension}：${levelLabel(c.level)}`);
+      push(`    ${c.detail}`);
+      if (c.suggestion) push(`    整改建议：${c.suggestion}`);
+      push(``);
+    }
+  } else {
+    push(`合规性评估进行中，请稍候…`);
+    push(``);
+  }
+
+  // ── 五、综合意见与建议 ──
+  push(`五、综合意见与建议`);
+  push(``);
+  if (step6 && step6.length > 0) {
+    for (const o of step6) {
+      push(`  ● [${prioLabel(o.priority)}] ${o.category}：${o.opinion}`);
+      push(`    ${o.detail}`);
+      push(``);
+    }
+  } else {
+    push(`（综合意见生成中，请稍候…）`);
+    push(``);
+  }
+
+  // ── 附注 ──
+  push(`附注`);
+  push(``);
+  push(`本报告由 AI 智能分析系统自动生成，仅供政策起草参考，不作为正式法律意见。最终出台前，请结合实际情况组织专家论证及合法性审查。`);
+
   return lines.join("\n");
 }

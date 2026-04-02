@@ -1,14 +1,19 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Loader2, AlertTriangle } from "lucide-react";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Loader2, AlertTriangle, FileText, Plus, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import type { PolicyItem } from "./PolicySearchStep";
-import { analyzePolicies } from "@/lib/policyDraftApi";
+import { generateCoreElementsFromPolicies } from "@/lib/policyDraftApi";
 
 interface PolicyAnalysisStepProps {
   selectedPolicies: PolicyItem[];
-  /** 分析完成後回傳結果給父層 */
+  /** 分析完成後回傳结果给父层（兼容旧逻辑） */
   onAnalysisComplete?: (analysis: ClauseComparison[]) => void;
+  /** 生成的核心要素（换行分隔）发生变化时回调 */
+  onCoreElementsChange?: (coreElements: string) => void;
+  /** 生成的核心要素 items（包含引用 clause）变化回调 */
+  onCoreElementsItemsChange?: (items: { id: string; text: string; refs: { id: string; title: string; url?: string; clause?: string }[] }[]) => void;
 }
 
 export interface ClauseComparison {
@@ -38,30 +43,48 @@ function HighlightCell({ text, isHighlighted, highlightType }: { text: string; i
   );
 }
 
-export function PolicyAnalysisStep({ selectedPolicies, onAnalysisComplete }: PolicyAnalysisStepProps) {
-  const [isAnalyzing, setIsAnalyzing] = useState(true);
-  const [analysis, setAnalysis] = useState<ClauseComparison[]>([]);
-  const [summary, setSummary] = useState<string[]>([]);
+export function PolicyAnalysisStep({ selectedPolicies, onAnalysisComplete, onCoreElementsChange, onCoreElementsItemsChange }: PolicyAnalysisStepProps) {
+  const [isGenerating, setIsGenerating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<{ id: string; text: string; refs: { id: string; title: string; url?: string; clause?: string }[] }[]>([]);
+  const [newItemText, setNewItemText] = useState("");
 
   useEffect(() => {
-    setIsAnalyzing(true);
+    setIsGenerating(true);
     setError(null);
-    analyzePolicies(selectedPolicies)
-      .then(({ analysis: result, summary: sum }) => {
-        setAnalysis(result);
-        setSummary(sum);
-        onAnalysisComplete?.(result);
+    generateCoreElementsFromPolicies(selectedPolicies)
+      .then(({ coreElements, items: result }) => {
+        setItems(result);
+        onCoreElementsChange?.(coreElements);
+        onCoreElementsItemsChange?.(result);
       })
       .catch((err: Error) => setError(err.message))
-      .finally(() => setIsAnalyzing(false));
+      .finally(() => setIsGenerating(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (isAnalyzing) {
+  const removeItem = (id: string) => {
+    const next = items.filter(i => i.id !== id);
+    setItems(next);
+    onCoreElementsChange?.(next.map(it => it.text).join("\n"));
+    onCoreElementsItemsChange?.(next);
+  };
+
+  const addItem = () => {
+    if (!newItemText.trim()) return;
+    const it = { id: `ce-${Date.now()}`, text: newItemText.trim(), refs: [] as { id: string; title: string; url?: string; clause?: string }[] };
+    const next = [...items, it];
+    setItems(next);
+    setNewItemText("");
+    onCoreElementsChange?.(next.map(it => it.text).join("\n"));
+    onCoreElementsItemsChange?.(next);
+  };
+
+  if (isGenerating) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
         <Loader2 className="h-8 w-8 text-primary animate-spin" />
-        <p className="text-sm text-muted-foreground">正在对选中的 {selectedPolicies.filter(p => p.selected).length} 条政策进行核心条款抽取与比对分析...</p>
+        <p className="text-sm text-muted-foreground">正在根据已选参考政策抽取核心要素…</p>
       </div>
     );
   }
@@ -69,7 +92,7 @@ export function PolicyAnalysisStep({ selectedPolicies, onAnalysisComplete }: Pol
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3 text-destructive">
-        <p className="text-sm">分析失败：{error}</p>
+        <p className="text-sm">生成失败：{error}</p>
       </div>
     );
   }
@@ -77,103 +100,60 @@ export function PolicyAnalysisStep({ selectedPolicies, onAnalysisComplete }: Pol
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-base font-semibold text-foreground mb-1">政策对比分析</h3>
+        <h3 className="text-base font-semibold text-foreground mb-1">核心要素生成</h3>
         <p className="text-xs text-muted-foreground">
-          自动抽取参考政策核心条款，对比适用对象、扶持方式与扶持力度，差异高亮标注
+          从选中的参考政策中总结出核心要点，并标注来源。支持手动添加和删除要点。
         </p>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-xs">
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" />
-          <span className="text-muted-foreground">力度突出</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-3 rounded bg-yellow-500/20 border border-yellow-500/30" />
-          <span className="text-muted-foreground">值得关注</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-3 rounded bg-blue-500/20 border border-blue-500/30" />
-          <span className="text-muted-foreground">特色做法</span>
-        </div>
-      </div>
+      <div className="space-y-3">
+        {items.map((it) => (
+          <div key={it.id} className="flex items-start justify-between gap-3 p-3 border border-border rounded-lg">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-foreground">{it.text}</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <TooltipProvider>
+                  {it.refs.map((r) => (
+                    <Tooltip key={r.id}>
+                      <TooltipTrigger asChild>
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted/20 text-xs text-muted-foreground cursor-help"
+                        >
+                          <FileText className="h-3 w-3 text-muted-foreground" />
+                          <span className="truncate max-w-[240px]">{r.title}</span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="w-80">
+                        <div className="text-xs text-muted-foreground mb-2 whitespace-pre-wrap">{r.clause}</div>
+                        {r.url && (
+                          <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">
+                            打开原文
+                          </a>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </TooltipProvider>
+                {it.refs.length === 0 && <span className="text-xs text-muted-foreground italic">未标注参考政策</span>}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <button onClick={() => removeItem(it.id)} className="text-destructive hover:underline text-xs flex items-center gap-1">
+                <X className="h-3 w-3" /> 删除
+              </button>
+            </div>
+          </div>
+        ))}
 
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="border border-border rounded-lg overflow-hidden"
-      >
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30">
-                <TableHead className="text-xs font-semibold w-[200px]">政策名称</TableHead>
-                <TableHead className="text-xs font-semibold w-[80px]">来源</TableHead>
-                <TableHead className="text-xs font-semibold">适用对象</TableHead>
-                <TableHead className="text-xs font-semibold">扶持方式</TableHead>
-                <TableHead className="text-xs font-semibold">扶持力度</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {analysis.map((row, i) => {
-                const hasHL = (field: string) => row.highlights.some(h => h.field === field);
-                const getHLType = (field: string) => row.highlights.find(h => h.field === field)?.type;
-
-                return (
-                  <motion.tr
-                    key={row.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.08 }}
-                    className="border-b border-border hover:bg-muted/20 transition-colors"
-                  >
-                    <TableCell className="text-xs font-medium text-foreground align-top py-3">
-                      {row.policyTitle}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground align-top py-3">
-                      {row.source}
-                    </TableCell>
-                    <TableCell className="text-xs text-foreground align-top py-3">
-                      <HighlightCell
-                        text={row.targetAudience}
-                        isHighlighted={hasHL("targetAudience")}
-                        highlightType={getHLType("targetAudience")}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs text-foreground align-top py-3">
-                      <HighlightCell
-                        text={row.supportMethod}
-                        isHighlighted={hasHL("supportMethod")}
-                        highlightType={getHLType("supportMethod")}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs text-foreground align-top py-3">
-                      <HighlightCell
-                        text={row.supportLevel}
-                        isHighlighted={hasHL("supportLevel")}
-                        highlightType={getHLType("supportLevel")}
-                      />
-                    </TableCell>
-                  </motion.tr>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </motion.div>
-
-      {/* Summary */}
-      <div className="bg-muted/30 rounded-lg border border-border p-4 space-y-2">
         <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">分析摘要</span>
+          <input
+            placeholder="添加新的核心要素，例如：明确扶持对象和范围"
+            value={newItemText}
+            onChange={(e) => setNewItemText(e.target.value)}
+            className="flex-1 rounded border border-border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary/30"
+          />
+          <Button onClick={addItem} className="h-9">添加</Button>
         </div>
-        <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
-          {summary.map((item, i) => (
-            <li key={i}>{item}</li>
-          ))}
-        </ul>
       </div>
     </div>
   );

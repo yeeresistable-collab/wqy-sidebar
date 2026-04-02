@@ -14,6 +14,8 @@ interface PolicyOutputPageProps {
   selectedPolicies?: PolicyItem[];
   outline?: OutlineSection[];
   onBack: () => void;
+  /** 快速起草模式：跳过 loading 骨架，直接打字机输出全文 */
+  typewriterMode?: boolean;
 }
 
 const editorTools = [
@@ -1351,6 +1353,7 @@ export function PolicyOutputPage({
   selectedPolicies = [],
   outline: outlineProp = [],
   onBack,
+  typewriterMode = false,
 }: PolicyOutputPageProps) {
   const navigate = useNavigate();
   const [displayedText, setDisplayedText] = useState("");
@@ -1475,7 +1478,12 @@ export function PolicyOutputPage({
         if (cites?.length) setCitations(cites);
         fullContentRef.current = content;
         setIsLoading(false);
-        // 打字機效果播放
+
+        /**
+         * typewriterMode：快速起草入口，跳过等待直接逐字输出；
+         * 正常模式：12ms/字；快速模式：6ms/字（更快体验打字机效果）
+         */
+        const charDelay = typewriterMode ? 6 : 12;
         let index = 0;
         const interval = setInterval(() => {
           if (index < content.length) {
@@ -1485,13 +1493,14 @@ export function PolicyOutputPage({
             setIsComplete(true);
             clearInterval(interval);
           }
-        }, 12);
+        }, charDelay);
         return () => clearInterval(interval);
       })
       .catch((err: Error) => {
         setError(err.message);
         setIsLoading(false);
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -1587,6 +1596,27 @@ export function PolicyOutputPage({
 
   return (
     <div className="flex flex-col h-full">
+      {/* 快速起草模式：打字机输出进度提示条 */}
+      {typewriterMode && !isComplete && !isLoading && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-2.5 mb-3 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 shrink-0"
+        >
+          <div className="flex gap-0.5">
+            {[0, 1, 2].map(i => (
+              <motion.div
+                key={i}
+                className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
+                transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }}
+              />
+            ))}
+          </div>
+          <span className="text-xs font-medium">AI 正在输出政策全文，请稍候…</span>
+        </motion.div>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         <div className="flex items-center gap-3">

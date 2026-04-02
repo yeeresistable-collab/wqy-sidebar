@@ -26,6 +26,7 @@ export interface OutlineSection {
 interface OutlineGenerationStepProps {
   policyTitle: string;
   coreElements: string;
+  coreItems?: { id: string; text: string; refs: { id: string; title: string; url?: string; clause?: string }[] }[];
   selectedPolicies: PolicyItem[];
   analysisResult?: ClauseComparison[];
   onOutlineComplete?: (outline: OutlineSection[]) => void;
@@ -266,6 +267,7 @@ function SubSectionBlock({
           {sub.referencePolicies.map((ref, ri) => (
             <span
               key={ri}
+              title={ref.clause}
               className="group/ref flex items-center gap-1 px-2 py-1 rounded-md bg-primary/5 border border-primary/15 text-[11px] text-primary max-w-[200px]"
             >
               <FileText className="h-3 w-3 shrink-0" />
@@ -293,6 +295,7 @@ function SubSectionBlock({
 export function OutlineGenerationStep({
   policyTitle,
   coreElements,
+  coreItems,
   selectedPolicies,
   analysisResult,
   onOutlineComplete,
@@ -311,7 +314,7 @@ export function OutlineGenerationStep({
   useEffect(() => {
     setIsGenerating(true);
     setError(null);
-    generateOutline({ policyTitle, coreElements, selectedPolicies, analysisResult })
+    generateOutline({ policyTitle, coreElements, selectedPolicies, analysisResult, coreItems })
       .then(({ outline: result }) => {
         setOutline(result);
         const exp: Record<string, boolean> = {};

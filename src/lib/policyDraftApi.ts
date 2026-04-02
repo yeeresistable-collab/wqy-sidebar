@@ -120,6 +120,37 @@ export async function analyzePolicies(selectedPolicies: PolicyItem[]): Promise<{
   return { analysis, summary };
 }
 
+export async function generateCoreElementsFromPolicies(selectedPolicies: PolicyItem[]): Promise<{
+  coreElements: string;
+  items: { id: string; text: string; refs: { id: string; title: string; url?: string; clause?: string }[] }[];
+}> {
+  await delay(900);
+  const refs = selectedPolicies.filter(p => p.selected);
+
+  // 简单抽取：基于参考政策标题中的关键词生成要点（模拟）
+  const examples = [
+    "明确适用对象与扶持范围",
+    "设定分档扶持标准与资金规模",
+    "完善申报审核与兑现机制",
+    "建立部门协同与绩效评估",
+    "强化资金监管与保障措施",
+  ];
+
+  const items = examples.slice(0, Math.max(3, Math.min(5, refs.length))).map((text, i) => ({
+    id: `ce-${Date.now()}-${i}`,
+    text: `${i + 1}. ${text}`,
+    refs: refs.slice(i, i + 2).map((p) => ({
+      id: p.id,
+      title: p.title,
+      url: p.url,
+      clause: `示例条款：在《${p.title}》中关于「${text}」的相关表述（摘录）`,
+    })),
+  }));
+
+  const coreElements = items.map(it => it.text).join("\n");
+  return { coreElements, items };
+}
+
 function buildSubSections(policyTitle: string, coreElements: string, selectedPolicies: PolicyItem[]): OutlineSubSection[] {
   const lines = coreElements
     .split(/\n+/)
@@ -151,9 +182,24 @@ export async function generateOutline(params: {
   coreElements: string;
   selectedPolicies: PolicyItem[];
   analysisResult?: ClauseComparison[];
+  coreItems?: { id: string; text: string; refs: { id: string; title: string; url?: string; clause?: string }[] }[];
 }): Promise<{ outline: OutlineSection[] }> {
   await delay(1200);
-  const subSections = buildSubSections(params.policyTitle, params.coreElements, params.selectedPolicies);
+
+  // If coreItems provided, use them to build subsections with reference clauses
+  const subSections = params.coreItems && params.coreItems.length > 0
+    ? params.coreItems.map((it, index) => ({
+        id: `sub-${index + 1}`,
+        title: `第${index + 1}条 ${it.text.replace(/^\d+[.、]\s*/, "")}`,
+        keyPoints: [
+          `围绕${it.text.replace(/^\d+[.、]\s*/, "")}明确政策适用边界和执行主体。`,
+          `结合${params.policyTitle}设置分档扶持标准和兑现条件。`,
+          `同步完善申报流程、监督管理和绩效反馈要求。`,
+        ],
+        referencePolicies: it.refs.map(r => ({ title: r.title, clause: r.clause || "（参考该政策相关条款）" })),
+      }))
+    : buildSubSections(params.policyTitle, params.coreElements, params.selectedPolicies);
+
   const outline: OutlineSection[] = [
     {
       id: "chapter-1",

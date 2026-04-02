@@ -41,12 +41,27 @@ const recentTasks = [
 
 const PolicyEvaluation = () => {
   const [searchParams] = useSearchParams();
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("query") ?? "");
+  const [searchQuery, setSearchQuery] = useState(
+    searchParams.get("policy") ?? searchParams.get("query") ?? ""
+  );
   const navigate = useNavigate();
+  const autostart = searchParams.get("autostart") === "1";
 
   useEffect(() => {
-    setSearchQuery(searchParams.get("query") ?? "");
+    setSearchQuery(searchParams.get("policy") ?? searchParams.get("query") ?? "");
   }, [searchParams]);
+
+  /** 自动跳转：来自助手推送且 autostart=1 时直接进入评估 */
+  useEffect(() => {
+    const policyParam = searchParams.get("policy");
+    if (autostart && policyParam) {
+      navigate(
+        `/policy-analysis?policy=${encodeURIComponent(policyParam)}`,
+        { replace: true }
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="p-6">
@@ -118,12 +133,21 @@ const PolicyEvaluation = () => {
             <p className="text-sm text-muted-foreground mt-2 ml-[52px]">搜索并选择您要评估的政策，然后开始分析</p>
           </CardHeader>
           <CardContent className="space-y-3 px-6 pb-6 pt-4">
+            {/* 来自助手推送时显示已选政策提示 */}
+            {searchParams.get("policy") && (
+              <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/20 px-4 py-2.5">
+                <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                <p className="text-sm text-foreground">
+                  已选择政策：<span className="font-medium text-primary">{searchParams.get("policy")}</span>，可直接点击「开始评估」一键生成报告。
+                </p>
+              </div>
+            )}
             <div className="flex gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="搜索政策名称/关键词"
-                  className="pl-10 h-12 text-base rounded-lg border-border"
+                  className={`pl-10 h-12 text-base rounded-lg ${searchParams.get("policy") ? "border-primary/40 bg-primary/5" : "border-border"}`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -138,7 +162,7 @@ const PolicyEvaluation = () => {
                   )
                 }
               >
-                开始评估
+                {searchParams.get("policy") ? "一键生成报告" : "开始评估"}
               </Button>
             </div>
           </CardContent>
