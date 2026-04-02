@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 96%;
+    --foreground: 0 0% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 15%;
+
+    --primary: 350 85% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 15%;
+
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 350 85% 96%;
+    --accent-foreground: 350 85% 42%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 350 85% 42%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 15%;
+    --sidebar-primary: 350 85% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 350 85% 96%;
+    --sidebar-accent-foreground: 350 85% 42%;
+    --sidebar-border: 0 0% 92%;
+    --sidebar-ring: 350 85% 42%;
+
+    --gov-gold: 38 90% 55%;
+    --gov-blue: 210 70% 45%;
+    --gov-green: 145 60% 42%;
+    --gov-orange: 25 90% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Noto Sans SC', sans-serif;
+  }
+}
+
+@layer utilities {
+  .animate-count-up {
+    animation: countUp 1.5s ease-out forwards;
+  }
+
+  @keyframes countUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .gov-gradient {
+    background: linear-gradient(135deg, hsl(350 85% 42%), hsl(350 70% 52%));
+  }
+
+  .gov-card-hover {
+    @apply transition-all duration-300;
+  }
+  .gov-card-hover:hover {
+    @apply shadow-lg -translate-y-1;
+  }
+}
