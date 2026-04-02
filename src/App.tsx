@@ -32,6 +32,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
+          {/* 带侧栏的所有页面 */}
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/policy-writing" element={<PolicyWriting />} />

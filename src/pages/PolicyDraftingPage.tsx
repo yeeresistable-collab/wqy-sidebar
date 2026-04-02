@@ -11,8 +11,8 @@ export default function PolicyDraftingPage() {
   } | undefined;
 
   return (
-    <div className="h-full overflow-hidden p-6 md:p-8">
-      <div className="h-full min-h-0">
+    <div className="flex flex-col overflow-hidden p-6 md:p-8" style={{ height: "calc(100vh)" }}>
+      <div className="flex flex-col flex-1 min-h-0">
         <PolicyDraftingFlow
           onBack={() => navigate("/policy-writing")}
           initialTitle={state?.policyTitle ?? state?.initialTitle}

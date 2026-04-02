@@ -120,6 +120,11 @@ export function AiAssistant() {
   const navigate = useNavigate();
   const location = useLocation();
   const scene = useMemo(() => resolveScene(location.pathname), [location.pathname]);
+
+  // 首页和对话页不显示智能助手悬浮窗
+  if (location.pathname === "/home" || location.pathname === "/brain-chat") {
+    return null;
+  }
   const [open, setOpen] = useState(true);
   const [maximized, setMaximized] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -133,6 +138,16 @@ export function AiAssistant() {
   const [bubbleHint, setBubbleHint] = useState<ProactiveHint | null>(null);
   /** 已推送过的事件 key 集合，避免同一事件重复推送 */
   const pushedEventsRef = useRef<Set<string>>(new Set());
+  /** 当前路由产生的待推送提示，open 时注入消息，closed 时显示气泡 */
+  const pendingHintRef = useRef<ProactiveHint | null>(null);
+  /** 稳定引用 open 状态，供只依赖 pathname 的 effect 读取最新值 */
+  const openRef = useRef(false);
+  /** 稳定引用当前会话 id */
+  const currentConversationIdRef = useRef<string | null>(null);
+
+  // 每次渲染同步最新值到 ref，供 effect 闭包安全读取
+  openRef.current = open;
+  currentConversationIdRef.current = currentConversationId;
 
   const currentConversation = useMemo(
     () => conversations.find((item) => item.id === currentConversationId) ?? null,
@@ -169,6 +184,32 @@ export function AiAssistant() {
     return () => window.removeEventListener("policy-assistant:open", handleOpen);
   }, []);
 
+  /** 待发送的初始问题（来自首页跳转），处理完后置 null */
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+
+  // 监听首页跳转携带的问题，自动打开全屏助手
+  useEffect(() => {
+    const handleAsk = (e: Event) => {
+      const question = (e as CustomEvent<{ question: string }>).detail?.question;
+      if (!question) return;
+      setOpen(true);
+      setMaximized(true);
+      setHistoryOpen(false);
+      setPendingQuestion(question);
+    };
+
+    window.addEventListener("policy-assistant:ask", handleAsk);
+    return () => window.removeEventListener("policy-assistant:ask", handleAsk);
+  }, []);
+
+  // 当有待发送问题且会话已就绪时自动发送
+  useEffect(() => {
+    if (!pendingQuestion || !currentConversation) return;
+    setPendingQuestion(null);
+    void handleSend(pendingQuestion);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuestion, currentConversation?.id]);
+
   useEffect(() => {
     if (!conversations.length) {
       const initialConversation = createConversation(scene);
@@ -184,116 +225,137 @@ export function AiAssistant() {
     setCurrentConversationId(sortedHistory[0]?.id ?? null);
   }, [scene, conversations.length, currentConversation, sortedHistory]);
 
-  // ── 主动推送：路由切换 + 业务事件，均按条件触发 ────────────────
+  // ── 路由切换时推送对应气泡提示 ────────────────────────────────
+  // 仅在 pathname 变化时触发，避免 open/currentConversationId 变化引起错误路由的提示
   useEffect(() => {
-    /**
-     * 推送一条提示到助手（打开时注入消息，关闭时显示气泡）
-     * eventKey 用于去重，同一 key 只推送一次
-     */
-    const pushHint = (eventKey: string, hint: ProactiveHint) => {
-      if (pushedEventsRef.current.has(eventKey)) return;
-      pushedEventsRef.current.add(eventKey);
-
-      if (open) {
-        const msg: AssistantMessage = {
-          role: "assistant",
-          content: hint.text,
-          actions: hint.actions,
-        };
-        setConversations((prev) =>
-          prev.map((conv) =>
-            conv.id === currentConversationId
-              ? { ...conv, messages: [...conv.messages, msg], updatedAt: Date.now() }
-              : conv,
-          ),
-        );
-      } else {
-        setBubbleHint(hint);
-      }
-    };
-
-    // ── 1. 路由切换时的条件推送 ──────────────────────────────────
     const pathname = location.pathname;
+
+    // 切换路由时先清除旧气泡，避免显示上一个路由的残留提示
+    setBubbleHint(null);
+
+    // 无需提示的页面直接返回
+    if (
+      pathname === "/home" ||
+      pathname === "/brain-chat" ||
+      pathname.startsWith("/my-documents") ||
+      pathname.startsWith("/reserve-library") ||
+      pathname.startsWith("/enterprise-evaluation") ||
+      pathname.startsWith("/effect-dashboard") ||
+      pathname.startsWith("/policy-report")
+    ) return;
+
     // 用「路径 + 当天日期」作为 key，同一天同一页面只推一次
     const today = new Date().toDateString();
     const routeKey = `route-${pathname}-${today}`;
+    if (pushedEventsRef.current.has(routeKey)) return;
+    pushedEventsRef.current.add(routeKey);
 
-    if (pathname.startsWith("/policy-writing/drafting") || pathname === "/policy-writing/drafting") {
-      // 起草页：仅当 localStorage 里有已保存大纲且未完成起草时推送
+    // 根据路由决定气泡内容（始终以气泡形式展示，不注入消息）
+    let hint: ProactiveHint | null = null;
+
+    if (pathname.startsWith("/policy-writing/drafting")) {
       try {
         const saved = JSON.parse(localStorage.getItem("policy-draft-outline") ?? "null");
         const completed = localStorage.getItem("policy-draft-completed") === "1";
         if (saved && !completed) {
-          pushHint(routeKey, {
+          hint = {
             text: `「${saved.title}」的政策大纲已保存，您尚未完成起草，点击下方可继续。`,
             actions: [{ label: "继续起草", path: "/policy-writing/drafting" }],
-          });
+          };
         }
       } catch { /* ignore */ }
 
     } else if (pathname.startsWith("/policy-writing/pre-evaluation")) {
-      // 前评估页：仅当有已完成的前评估报告时推送
       try {
         const done = JSON.parse(localStorage.getItem("policy-pre-eval-done") ?? "null");
         if (done?.title) {
-          pushHint(routeKey, {
+          hint = {
             text: `「${done.title}」的政策前评估报告已生成完成，可点击查看。`,
             actions: [{ label: "查看报告", path: "/policy-writing/pre-evaluation" }],
-          });
+          };
         }
       } catch { /* ignore */ }
 
-    } else if (pathname === "/policy-writing" || (pathname.startsWith("/policy-writing") && !pathname.includes("/drafting") && !pathname.includes("/pre-evaluation"))) {
-      // 政策制定首页：提示近期新政策发布
-      pushHint(routeKey, {
+    } else if (
+      pathname === "/policy-writing" ||
+      (pathname.startsWith("/policy-writing") &&
+        !pathname.includes("/drafting") &&
+        !pathname.includes("/pre-evaluation"))
+    ) {
+      hint = {
         text: "北京市/国家近期有关于《促进新一代信息技术产业高质量发展若干政策措施》的新政策发布，点击下方可查看。",
         actions: [{ label: "查看政策", path: "/policy-writing/search", search: { query: "新一代信息技术" } }],
-      });
+      };
 
     } else if (pathname.startsWith("/policy-reach")) {
-      // 政策触达页：提示近期触达完成情况
-      pushHint(routeKey, {
+      hint = {
         text: "近期「高新技术企业认定奖励」事项已完成触达128次，可点击查看触达情况。",
         actions: [{ label: "查看触达情况", path: "/policy-reach" }],
-      });
+      };
 
-    } else if (pathname === "/" || pathname.startsWith("/policy-redeem")) {
-      // 政策兑现页：提示新增评优事项
-      pushHint(routeKey, {
+    } else if (pathname === "/dashboard" || pathname === "/" || pathname.startsWith("/policy-redeem")) {
+      hint = {
         text: "新增「人工智能产业扶持」事项可以用于企业评优，可点击开始评测。",
         actions: [{ label: "开始评测", path: "/policy-analysis" }],
-      });
+      };
 
     } else if (pathname.startsWith("/policy-analysis")) {
-      // 政策亮点分析页：提示新增事项
-      pushHint(routeKey, {
+      hint = {
         text: "新增「人工智能产业扶持」事项可以用于企业评优，可点击开始评测。",
         actions: [{ label: "开始评测", path: "/policy-analysis" }],
-      });
+      };
 
     } else if (pathname.startsWith("/policy-evaluation")) {
-      // 政策评价页：提示有政策可评价
-      pushHint(routeKey, {
+      hint = {
         text: "《北京经开区产业发展促进办法》已发布超6个月，可点击对该政策进行汇总评价。",
         actions: [{
           label: "一键生成评价报告",
           path: "/policy-evaluation",
           search: { policy: "北京经开区产业发展促进办法", autostart: "1" },
         }],
-      });
+      };
     }
 
-    // ── 2. 业务事件监听（异步任务完成后推送）──────────────────────
+    // 存入 ref，供助手打开时注入消息
+    pendingHintRef.current = hint;
 
+    if (hint) {
+      if (openRef.current) {
+        // 助手已打开：直接注入消息到当前会话
+        const convId = currentConversationIdRef.current;
+        if (convId) {
+          setConversations((prev) =>
+            prev.map((conv) =>
+              conv.id === convId
+                ? {
+                    ...conv,
+                    messages: [
+                      ...conv.messages,
+                      { role: "assistant" as const, content: hint!.text, actions: hint!.actions },
+                    ],
+                    updatedAt: Date.now(),
+                  }
+                : conv,
+            ),
+          );
+        }
+      } else {
+        // 助手关闭：显示气泡
+        setBubbleHint(hint);
+      }
+    }
+  // 只在 pathname 变化时重新执行
+  }, [location.pathname]);
+
+  // ── 业务事件监听（异步任务完成后推送气泡）────────────────────
+  useEffect(() => {
     /** 大纲保存事件（由 PolicyDraftingFlow 发出） */
     const handleOutlineSaved = (e: Event) => {
       const detail = (e as CustomEvent<{ title: string; draftCompleted: boolean }>).detail;
       if (detail.draftCompleted) return;
-      // 持久化"已保存大纲未完成"标记
       localStorage.setItem("policy-draft-outline", JSON.stringify({ title: detail.title, savedAt: Date.now() }));
       localStorage.removeItem("policy-draft-completed");
-      const key = `outline-saved-${detail.title}-${Date.now()}`;
-      pushHint(key, {
+      setBubbleHint({
         text: `「${detail.title}」的政策大纲已保存，您尚未完成起草，点击下方可继续。`,
         actions: [{ label: "继续起草", path: "/policy-writing/drafting" }],
       });
@@ -302,10 +364,8 @@ export function AiAssistant() {
     /** 前评估报告生成完成（由 PolicyAssessmentAuto 发出） */
     const handlePreEvalDone = (e: Event) => {
       const detail = (e as CustomEvent<{ title: string }>).detail;
-      // 持久化完成状态
       localStorage.setItem("policy-pre-eval-done", JSON.stringify({ title: detail.title, doneAt: Date.now() }));
-      const key = `pre-eval-done-${detail.title}-${Date.now()}`;
-      pushHint(key, {
+      setBubbleHint({
         text: `「${detail.title}」的政策前评估报告已生成完成，可点击查看。`,
         actions: [{ label: "查看报告", path: "/policy-writing/pre-evaluation" }],
       });
@@ -314,8 +374,7 @@ export function AiAssistant() {
     /** 政策评价报告生成完成 */
     const handleEvalReportDone = (e: Event) => {
       const detail = (e as CustomEvent<{ title: string }>).detail;
-      const key = `eval-report-done-${detail.title}-${Date.now()}`;
-      pushHint(key, {
+      setBubbleHint({
         text: `「${detail.title}」的政策评价报告已生成完成，可点击查看。`,
         actions: [{
           label: "查看评价报告",
@@ -334,12 +393,33 @@ export function AiAssistant() {
       window.removeEventListener("assistant:pre-eval-done", handlePreEvalDone);
       window.removeEventListener("assistant:eval-report-done", handleEvalReportDone);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, open, currentConversationId]);
+  }, []);
 
-  // 打开助手时清除气泡
+  // 打开助手时：清除气泡，并将当前路由的待推送提示注入会话消息
   useEffect(() => {
-    if (open) setBubbleHint(null);
+    if (!open) return;
+    setBubbleHint(null);
+
+    const hint = pendingHintRef.current;
+    const convId = currentConversationIdRef.current;
+    if (!hint || !convId) return;
+
+    // 注入一次后清空，避免重复注入
+    pendingHintRef.current = null;
+    setConversations((prev) =>
+      prev.map((conv) =>
+        conv.id === convId
+          ? {
+              ...conv,
+              messages: [
+                ...conv.messages,
+                { role: "assistant" as const, content: hint.text, actions: hint.actions },
+              ],
+              updatedAt: Date.now(),
+            }
+          : conv,
+      ),
+    );
   }, [open]);
 
   const updateConversation = useCallback((conversationId: string, nextMessages: AssistantMessage[]) => {

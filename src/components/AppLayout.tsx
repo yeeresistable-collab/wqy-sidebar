@@ -17,8 +17,8 @@ const documentNavItems = [
 
 export function AppLayout() {
   return (
-    <div className="min-h-screen bg-[#f7f4f4] text-foreground">
-      <div className="flex min-h-screen">
+    <div className="h-screen bg-[#f7f4f4] text-foreground">
+      <div className="flex h-screen">
         <aside className="fixed inset-y-0 left-0 z-30 flex w-[244px] flex-col overflow-hidden bg-gradient-to-b from-[#d21639] via-[#c61033] to-[#b80f2f] text-white shadow-[18px_0_40px_rgba(157,12,38,0.22)]">
           <div className="border-b border-white/12 px-6 py-12">
             <div className="flex items-center gap-4">
@@ -64,11 +64,12 @@ export function AppLayout() {
                 ))}
               </div>
             </div>
+
           </nav>
         </aside>
 
-        <div className="ml-[244px] flex min-h-screen flex-1 flex-col">
-          <main className="flex-1 overflow-auto pb-8">
+        <div className="ml-[244px] flex h-screen flex-1 flex-col overflow-hidden">
+          <main className="flex-1 overflow-auto">
             <Outlet />
           </main>
         </div>

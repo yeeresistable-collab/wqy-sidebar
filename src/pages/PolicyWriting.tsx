@@ -1,8 +1,9 @@
-import { Sparkles, FileText, Activity, TrendingUp, Clock, ChevronRight, ChevronsRight, Heart, PenTool, Shield, Users, Search, BarChart3, FilePen, ClipboardCheck, Wrench, Calculator, Database, BookOpen, Zap, Eye, CheckCircle2 } from "lucide-react";
+import { Sparkles, FileText, Activity, Clock, ChevronRight, ChevronsRight, PenTool, Shield, Users, Search, BarChart3, FilePen, ClipboardCheck, Wrench, Calculator, Database, BookOpen, Zap, Eye, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { PageHero } from "@/components/PageHero";
 
 const stats = [
@@ -69,6 +70,24 @@ const recentDraftTasks = [
 
 export default function PolicyWriting() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // 从首页携带的问题，到达后自动打开全屏助手并发送
+  useEffect(() => {
+    const state = location.state as { assistantQuestion?: string } | undefined;
+    if (!state?.assistantQuestion) return;
+    // 清除 state 避免刷新时重复触发
+    window.history.replaceState({}, "");
+    // 稍作延迟等助手组件挂载就绪
+    const timer = setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("policy-assistant:ask", {
+          detail: { question: state.assistantQuestion },
+        })
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [location.state]);
 
   return (
     <div className="p-6">
