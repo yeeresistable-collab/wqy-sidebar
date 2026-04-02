@@ -244,11 +244,12 @@ export function AiAssistant() {
       pathname.startsWith("/policy-report")
     ) return;
 
-    // 用「路径 + 当天日期」作为 key，同一天同一页面只推一次
+    // 归一化路径用于去重 key（/ 和 /dashboard 都算「政策兑现」同一页）
+    const normalizedPath = (pathname === "/" || pathname === "/dashboard") ? "/dashboard" : pathname;
+    // 用「归一化路径 + 当天日期」作为 key 做内存去重
     const today = new Date().toDateString();
-    const routeKey = `route-${pathname}-${today}`;
+    const routeKey = `route-${normalizedPath}-${today}`;
     if (pushedEventsRef.current.has(routeKey)) return;
-    pushedEventsRef.current.add(routeKey);
 
     // 根据路由决定气泡内容（始终以气泡形式展示，不注入消息）
     let hint: ProactiveHint | null = null;
@@ -316,33 +317,36 @@ export function AiAssistant() {
       };
     }
 
+    if (!hint) return;
+
+    // 有实际内容才标记为「已推送」，避免条件不满足时占用 key
+    pushedEventsRef.current.add(routeKey);
+
     // 存入 ref，供助手打开时注入消息
     pendingHintRef.current = hint;
 
-    if (hint) {
-      if (openRef.current) {
-        // 助手已打开：直接注入消息到当前会话
-        const convId = currentConversationIdRef.current;
-        if (convId) {
-          setConversations((prev) =>
-            prev.map((conv) =>
-              conv.id === convId
-                ? {
-                    ...conv,
-                    messages: [
-                      ...conv.messages,
-                      { role: "assistant" as const, content: hint!.text, actions: hint!.actions },
-                    ],
-                    updatedAt: Date.now(),
-                  }
-                : conv,
-            ),
-          );
-        }
-      } else {
-        // 助手关闭：显示气泡
-        setBubbleHint(hint);
+    if (openRef.current) {
+      // 助手已打开：直接注入消息到当前会话
+      const convId = currentConversationIdRef.current;
+      if (convId) {
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === convId
+              ? {
+                  ...conv,
+                  messages: [
+                    ...conv.messages,
+                    { role: "assistant" as const, content: hint.text, actions: hint.actions },
+                  ],
+                  updatedAt: Date.now(),
+                }
+              : conv,
+          ),
+        );
       }
+    } else {
+      // 助手关闭：显示气泡
+      setBubbleHint(hint);
     }
   // 只在 pathname 变化时重新执行
   }, [location.pathname]);
